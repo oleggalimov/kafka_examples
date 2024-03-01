@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.oleggalimov.examples.kafka.producer.LoggingDeadLetterPublishingRecoverer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,7 +16,10 @@ import org.springframework.kafka.KafkaException;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.ConsumerRecordRecoverer;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -34,24 +40,22 @@ public class KafkaApplicationConfig {
         return mapper;
     }
 
-    @Bean
-    public DefaultErrorHandler defaultErrorHandler(ConsumerRecordRecoverer recoverer, FixedBackOff backoff) {
-        var handler = new DefaultErrorHandler(recoverer, backoff);
-//        handler.addRetryableExceptions(SocketTimeoutException.class);
-//        handler.addNotRetryableExceptions(JsonEOFException.class);
-        handler.setLogLevel(KafkaException.Level.TRACE); //не работает!
-        return handler;
-    }
+//    @Bean
+//    public DefaultErrorHandler defaultErrorHandler(ConsumerRecordRecoverer recoverer, FixedBackOff backoff) {
+//        var handler = new DefaultErrorHandler(recoverer, backoff);
+////        handler.addRetryableExceptions(SocketTimeoutException.class);
+////        handler.addNotRetryableExceptions(JsonEOFException.class);
+//        handler.setLogLevel(KafkaException.Level.TRACE); //не работает!
+//        return handler;
+//    }
 
     @Bean(name = DEFAULT_KAFKA_CONTAINER_FACTORY)
-    public ConcurrentKafkaListenerContainerFactory getDefaultFactory(KafkaProperties kafkaProperties,
-                                                                     DefaultErrorHandler defaultErrorHandler) {
+    public ConcurrentKafkaListenerContainerFactory getDefaultFactory(KafkaProperties kafkaProperties) {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
         factory.setConsumerFactory(getDefaultConsumerFactory(kafkaProperties));
         factory.setBatchListener(true);
         factory.setAutoStartup(true);
         factory.setConcurrency(1);
-        factory.setCommonErrorHandler(defaultErrorHandler);
         //Чтобы добавить объект Ack в листенеры нужна эта пропертя
 //        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         return factory;
@@ -72,5 +76,22 @@ public class KafkaApplicationConfig {
 //        result.put(ErrorHandlingDeserializer.VALUE_FUNCTION, ru.tinkoff.prm.prma.consumer.FailedDeserializeFunction.class);
 
         return result;
+    }
+
+
+    @Bean
+    public DeadLetterPublishingRecoverer getDeadLetterPublishingRecoverer(KafkaProperties kafkaProperties) {
+        return new LoggingDeadLetterPublishingRecoverer(buildDefaultProducer(kafkaProperties), "test.topic.dlt");
+    }
+
+    public KafkaTemplate<String, String> buildDefaultProducer(KafkaProperties kafkaProperties) {
+        var producerFactory = new DefaultKafkaProducerFactory<String, String>(Map.of(
+                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaProperties.getBootstrapServers(),
+                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                ProducerConfig.RETRIES_CONFIG, "3",
+                ProducerConfig.RECONNECT_BACKOFF_MS_CONFIG, "5000"
+        ));
+        return new KafkaTemplate<>(producerFactory);
     }
 }
