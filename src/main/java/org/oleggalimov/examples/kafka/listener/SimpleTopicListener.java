@@ -40,7 +40,6 @@ public class SimpleTopicListener {
                     }
                 }
         );
-        log.error(records.toString());
     }
 
     public void handleException(ConsumerRecord<String, String> consumerRecord, Exception exception) {
