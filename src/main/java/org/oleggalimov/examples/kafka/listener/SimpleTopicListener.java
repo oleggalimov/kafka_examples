@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.oleggalimov.examples.kafka.service.SimpleMessageProcessor;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -21,7 +21,6 @@ public class SimpleTopicListener {
     private static final String TEST_GROUP_ID = "test.topic.group.1";
 
     private final SimpleMessageProcessor testService;
-    private final DeadLetterPublishingRecoverer deadLetterPublishingRecoverer;
 
     @KafkaListener(
             id = "test_1",
@@ -29,20 +28,8 @@ public class SimpleTopicListener {
             containerFactory = DEFAULT_KAFKA_CONTAINER_FACTORY,
             groupId = TEST_GROUP_ID
     )
-//    @RetryableTopic - не работает, потому что читаем батчем
-    public void readMessage(List<ConsumerRecord<String, String>> records) {
-        records.forEach(consumerRecord -> {
-                    try {
-                        testService.processMessage(consumerRecord, CONSUMER_NUMBER);
-                    } catch (Exception exception) {
-                        log.error("Не удалось обработать сообщение с оффсетом {}, отправляем в DLT", consumerRecord, exception);
-                        handleException(consumerRecord, exception);
-                    }
-                }
-        );
-    }
-
-    public void handleException(ConsumerRecord<String, String> consumerRecord, Exception exception) {
-        deadLetterPublishingRecoverer.accept(consumerRecord, exception);
+    public void readMessage(List<ConsumerRecord<String, String>> records, Acknowledgment acknowledgment) {
+        records.forEach(consumerRecord -> testService.processMessage(consumerRecord, CONSUMER_NUMBER));
+        acknowledgment.acknowledge();
     }
 }

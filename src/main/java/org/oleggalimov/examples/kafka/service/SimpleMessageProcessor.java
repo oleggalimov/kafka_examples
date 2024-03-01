@@ -7,10 +7,10 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.oleggalimov.examples.kafka.dto.KafkaMessageDto;
-import org.oleggalimov.examples.kafka.entity.InvalidSimpleMessage;
 import org.oleggalimov.examples.kafka.entity.SimpleMessage;
 import org.oleggalimov.examples.kafka.repository.InvalidSimpleMessageRepository;
 import org.oleggalimov.examples.kafka.repository.SimpleMessageRepository;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.stereotype.Service;
 
 import java.util.stream.Collectors;
@@ -28,6 +28,8 @@ public class SimpleMessageProcessor {
 
     private final Validator validator;
 
+    private final DeadLetterPublishingRecoverer deadLetterPublishingRecoverer;
+
     @SneakyThrows
     public void processMessage(ConsumerRecord<String, String> consumerRecord, int consumerNumber) {
         log.info("Процессим сообщение: {}", consumerRecord);
@@ -36,8 +38,9 @@ public class SimpleMessageProcessor {
             validateMessage(newMessage);
             simpleMessageRepository.save(SimpleMessage.fromDto(newMessage, consumerNumber));
         } catch (Exception e) {
-            log.error("Не удалось обработать сообщение {}", consumerRecord, e);
-            invalidSimpleMessageRepository.save(InvalidSimpleMessage.fromRecord(consumerRecord, e));
+            log.error("Не удалось обработать сообщение {}", consumerRecord);
+//            invalidSimpleMessageRepository.save(InvalidSimpleMessage.fromRecord(consumerRecord, e));
+            handleException(consumerRecord, e);
         }
     }
 
@@ -51,6 +54,10 @@ public class SimpleMessageProcessor {
         throw new RuntimeException("Сообщение не прошло валидацию!" + violations.stream()
                 .map(violation -> violation.getMessage())
                 .collect(Collectors.joining(", ")));
+    }
+
+    public void handleException(ConsumerRecord<String, String> consumerRecord, Exception exception) {
+        deadLetterPublishingRecoverer.accept(consumerRecord, exception);
     }
 
 }
